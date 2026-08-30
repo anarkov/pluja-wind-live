@@ -30,16 +30,19 @@ jobs:
         run: |
           set -euo pipefail
           candidate="${{ runner.temp }}/d2r-live/manifest.json"
-          if [[ -f live/manifest.json ]] && \
+          if [[ -f live/manifest.json && -f live/iberia.pawind.gz && -f live/iberia.patemp.gz ]] && \
              [[ "$(jq -r .run "$candidate")" == "$(jq -r .run live/manifest.json)" ]] && \
-             [[ "$(jq -r '.regions.iberia.fields[0].validTime' "$candidate")" == "$(jq -r '.regions.iberia.fields[0].validTime' live/manifest.json)" ]]; then
+             [[ "$(jq -r '.regions.iberia.fields[0].validTime' "$candidate")" == "$(jq -r '.regions.iberia.fields[0].validTime' live/manifest.json)" ]] && \
+             [[ -n "$(jq -r '.regions.iberia.temperatureFields[0].validTime // empty' "$candidate")" ]] && \
+             [[ "$(jq -r '.regions.iberia.temperatureFields[0].validTime' "$candidate")" == "$(jq -r '.regions.iberia.temperatureFields[0].validTime // empty' live/manifest.json)" ]]; then
             echo "Current live field is already published."
             exit 0
           fi
           mkdir -p live
           cp "${{ runner.temp }}/d2r-live/manifest.json" live/manifest.json
           cp "${{ runner.temp }}/d2r-live/iberia.pawind.gz" live/iberia.pawind.gz
-          git add live/manifest.json live/iberia.pawind.gz
+          cp "${{ runner.temp }}/d2r-live/iberia.patemp.gz" live/iberia.patemp.gz
+          git add live/manifest.json live/iberia.pawind.gz live/iberia.patemp.gz
           if git diff --cached --quiet; then
             echo "No artifact changes."
             exit 0
@@ -48,3 +51,4 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Update D2R ICON-EU LIVE"
           git push
+
