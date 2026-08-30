@@ -1,0 +1,50 @@
+name: Publish D2R ICON-EU LIVE
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 */3 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install producer dependency
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements-live.txt
+      - name: Generate into isolated staging
+        env:
+          D2R_OUTPUT_DIR: ${{ runner.temp }}/d2r-live
+        run: python build_live_iberia.py
+      - name: Validate candidate before publishing
+        run: python validate_live.py "${{ runner.temp }}/d2r-live"
+      - name: Publish only a new run or valid field
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate="${{ runner.temp }}/d2r-live/manifest.json"
+          if [[ -f live/manifest.json ]] && \
+             [[ "$(jq -r .run "$candidate")" == "$(jq -r .run live/manifest.json)" ]] && \
+             [[ "$(jq -r '.regions.iberia.fields[0].validTime' "$candidate")" == "$(jq -r '.regions.iberia.fields[0].validTime' live/manifest.json)" ]]; then
+            echo "Current live field is already published."
+            exit 0
+          fi
+          mkdir -p live
+          cp "${{ runner.temp }}/d2r-live/manifest.json" live/manifest.json
+          cp "${{ runner.temp }}/d2r-live/iberia.pawind.gz" live/iberia.pawind.gz
+          git add live/manifest.json live/iberia.pawind.gz
+          if git diff --cached --quiet; then
+            echo "No artifact changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update D2R ICON-EU LIVE"
+          git push
