@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "model": "ICON-EU",
+  "run": "2026083018",
+  "generatedAt": "2026-08-30T21:14:56.168377+00:00",
+  "regions": {
+    "iberia": {
+      "bbox": {
+        "north": 45.0,
+        "south": 35.0,
+        "west": -11.0,
+        "east": 5.0
+      },
+      "fields": [
+        {
+          "forecastHour": 3,
+          "validTime": "2026-08-30T21:00:00+00:00",
+          "url": "iberia.pawind.gz",
+          "etag": "2026083018-f003-v1",
+          "size": 121962
+        }
+      ]
+    }
+  }
+}
