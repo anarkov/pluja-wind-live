@@ -100,8 +100,10 @@ def main() -> None:
     now = dt.datetime.now(dt.timezone.utc)
     run, forecast_hour, u_url, v_url = discover_pair(now)
     u_points, v_points = download_and_decode(u_url), download_and_decode(v_url)
-    if u_points.keys() != v_points.keys() or not u_points:
-        raise RuntimeError("ICON-EU U/V crop is incomplete or inconsistent")
+    t_url = u_url.replace("/u_10m/", "/t_2m/").replace("_U_10M.", "_T_2M.")
+    t_points = download_and_decode(t_url)
+    if u_points.keys() != v_points.keys() or u_points.keys() != t_points.keys() or not u_points:
+        raise RuntimeError("ICON-EU U/V/T crop is incomplete or inconsistent")
     lats = sorted({latitude for latitude, _ in u_points}, reverse=True)
     lons = sorted({longitude for _, longitude in u_points})
     if len(u_points) != len(lats) * len(lons) or len(lats) < 2 or len(lons) < 2:
@@ -117,11 +119,22 @@ def main() -> None:
     target = OUT / "iberia.pawind.gz"
     with gzip.open(target, "wb") as output:
         output.write(raw)
+    temperature_raw = bytearray(b"PATEMP01") + bytes((1, 1, 2, forecast_hour))
+    temperature_raw += struct.pack("<qqq", int(run_at.timestamp()), int(valid.timestamp()), int(generated.timestamp()))
+    temperature_raw += struct.pack("<ddddddHHff", max(lats), min(lats), min(lons), max(lons), lats[0], lons[0], len(lons), len(lats), abs(lats[0] - lats[1]), SCALE)
+    for latitude in lats:
+        for longitude in lons:
+            temperature_raw += struct.pack("<h", round((t_points[(latitude, longitude)] - 273.15) * SCALE))
+    temperature_target = OUT / "iberia.patemp.gz"
+    with gzip.open(temperature_target, "wb") as output:
+        output.write(temperature_raw)
     manifest = {
         "version": 1, "model": "ICON-EU", "run": run, "generatedAt": generated.isoformat(),
         "regions": {"iberia": {"bbox": {"north": max(lats), "south": min(lats), "west": min(lons), "east": max(lons)},
             "fields": [{"forecastHour": forecast_hour, "validTime": valid.isoformat(), "url": target.name,
-                "etag": f"{run}-f{forecast_hour:03d}-v1", "size": target.stat().st_size}]}}
+                "etag": f"{run}-f{forecast_hour:03d}-v1", "size": target.stat().st_size}],
+            "temperatureFields": [{"forecastHour": forecast_hour, "validTime": valid.isoformat(), "url": temperature_target.name,
+                "etag": f"{run}-f{forecast_hour:03d}-t1", "size": temperature_target.stat().st_size}]}}
     }
     (OUT / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"run": run, "forecastHour": forecast_hour, "validTime": valid.isoformat(), "output": str(OUT)}, indent=2))
