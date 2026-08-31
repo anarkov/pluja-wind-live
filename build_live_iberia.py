@@ -28,6 +28,11 @@ BASE = "https://opendata.dwd.de/weather/nwp/icon-eu/grib"
 RUN_HOURS = (21, 18, 15, 12, 9, 6, 3, 0)
 NORTH, SOUTH, WEST, EAST = 45.0, 35.0, -11.0, 5.0
 SCALE = 100.0
+# ICON-EU is hourly forecast data: retain a nearby past field briefly, but do
+# not publish one that is already meteorologically stale.  Keep this aligned
+# with Android's IconEuLiveTimePolicy.
+MAX_PAST_SECONDS = 2 * 60 * 60
+MAX_FUTURE_SECONDS = 90 * 60
 
 
 def fetch(url: str) -> bytes:
@@ -41,15 +46,15 @@ def names_for(run_hour: str, component: str) -> set[str]:
     return set(html.unescape(value) for value in re.findall(r'href="([^"?]+\.grib2\.bz2)', index))
 
 
-def discover_pair(now: dt.datetime) -> tuple[str, int, str, str]:
-    """Return the newest complete U10/V10 field whose valid time is closest to now."""
-    candidates: list[tuple[float, str, int, str, str]] = []
+def discover_pair(now: dt.datetime) -> tuple[str, int, str, str, str]:
+    """Return the newest complete U10/V10/T2M field whose valid time is closest to now."""
+    candidates: list[tuple[float, str, int, str, str, str]] = []
     for day_offset in range(5):
         day = (now - dt.timedelta(days=day_offset)).strftime("%Y%m%d")
         for hour in RUN_HOURS:
             hour_text = f"{hour:02d}"
             try:
-                u_names, v_names = names_for(hour_text, "u_10m"), names_for(hour_text, "v_10m")
+                u_names, v_names, t_names = names_for(hour_text, "u_10m"), names_for(hour_text, "v_10m"), names_for(hour_text, "t_2m")
             except Exception:
                 continue
             expression = re.compile(rf"icon-eu_europe_regular-lat-lon_single-level_{day}{hour_text}_(\d{{3}})_U_10M\.grib2\.bz2")
@@ -59,18 +64,21 @@ def discover_pair(now: dt.datetime) -> tuple[str, int, str, str]:
                 if not match:
                     continue
                 v_name = u_name.replace("_U_10M.", "_V_10M.")
-                if v_name not in v_names:
+                t_name = u_name.replace("_U_10M.", "_T_2M.")
+                if v_name not in v_names or t_name not in t_names:
                     continue
                 forecast_hour = int(match.group(1))
                 valid = run_at + dt.timedelta(hours=forecast_hour)
-                candidates.append((abs((valid - now).total_seconds()), f"{day}{hour_text}", forecast_hour,
-                    f"{BASE}/{hour_text}/u_10m/{u_name}", f"{BASE}/{hour_text}/v_10m/{v_name}"))
+                delta_seconds = (valid - now).total_seconds()
+                if -MAX_PAST_SECONDS <= delta_seconds <= MAX_FUTURE_SECONDS:
+                    candidates.append((abs(delta_seconds), f"{day}{hour_text}", forecast_hour,
+                        f"{BASE}/{hour_text}/u_10m/{u_name}", f"{BASE}/{hour_text}/v_10m/{v_name}", f"{BASE}/{hour_text}/t_2m/{t_name}"))
         if candidates:
             break
     if not candidates:
-        raise RuntimeError("No complete ICON-EU U_10M/V_10M pair found")
-    _, run, forecast_hour, u_url, v_url = min(candidates, key=lambda item: item[0])
-    return run, forecast_hour, u_url, v_url
+        raise RuntimeError("No complete ICON-EU U_10M/V_10M/T_2M field is close enough to now")
+    _, run, forecast_hour, u_url, v_url, t_url = min(candidates, key=lambda item: item[0])
+    return run, forecast_hour, u_url, v_url, t_url
 
 
 def read_grib(path: Path) -> dict[tuple[float, float], float]:
@@ -98,9 +106,8 @@ def download_and_decode(url: str) -> dict[tuple[float, float], float]:
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     now = dt.datetime.now(dt.timezone.utc)
-    run, forecast_hour, u_url, v_url = discover_pair(now)
+    run, forecast_hour, u_url, v_url, t_url = discover_pair(now)
     u_points, v_points = download_and_decode(u_url), download_and_decode(v_url)
-    t_url = u_url.replace("/u_10m/", "/t_2m/").replace("_U_10M.", "_T_2M.")
     t_points = download_and_decode(t_url)
     if u_points.keys() != v_points.keys() or u_points.keys() != t_points.keys() or not u_points:
         raise RuntimeError("ICON-EU U/V/T crop is incomplete or inconsistent")
