@@ -5,6 +5,7 @@ import gzip
 import json
 import struct
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -39,21 +40,30 @@ def main(directory: str) -> None:
     except OSError as error:
         fail(f"gzip: {error}")
     print(f"valid PAWIND01: {width}x{height}, {asset.stat().st_size} bytes")
-    temperature_fields = manifest["regions"]["iberia"].get("temperatureFields", [])
-    if temperature_fields:
-        temperature = temperature_fields[0]; temperature_asset = root / temperature["url"]
-        if temperature["url"] != "iberia.patemp.gz" or not temperature_asset.is_file() or temperature_asset.stat().st_size != temperature["size"]:
-            fail("PATEMP size does not match manifest")
-        raw_temperature = gzip.decompress(temperature_asset.read_bytes())
-        if raw_temperature[:8] != b"PATEMP01" or raw_temperature[8:11] != bytes((1, 1, 2)):
-            fail("PATEMP01 magic/version/model/encoding")
-        tw, th = struct.unpack_from("<HH", raw_temperature, 84)
-        if tw != width or th != height or len(raw_temperature) != 96 + tw * th * 2:
-            fail("PATEMP01 payload dimensions")
-        print(f"valid PATEMP01: {tw}x{th}, {temperature_asset.stat().st_size} bytes")
+    try:
+        temperature = manifest["regions"]["iberia"]["temperatureFields"][0]
+        valid = datetime.fromisoformat(field["validTime"]).astimezone(timezone.utc)
+        delta = (valid - datetime.now(timezone.utc)).total_seconds()
+        if not (-2 * 60 * 60 <= delta <= 90 * 60):
+            fail(f"candidate is outside ICON-EU LIVE window: validTime={field['validTime']}")
+    except (KeyError, IndexError, TypeError, ValueError) as error:
+        fail(f"temperature/freshness contract: {error}")
+    temperature_asset = root / temperature["url"]
+    if temperature["url"] != "iberia.patemp.gz" or not temperature_asset.is_file() or temperature_asset.stat().st_size != temperature["size"]:
+        fail("PATEMP size does not match manifest")
+    if temperature.get("forecastHour") != field["forecastHour"] or temperature.get("validTime") != field["validTime"]:
+        fail("wind and temperature do not share forecastHour/validTime")
+    raw_temperature = gzip.decompress(temperature_asset.read_bytes())
+    if raw_temperature[:8] != b"PATEMP01" or raw_temperature[8:11] != bytes((1, 1, 2)):
+        fail("PATEMP01 magic/version/model/encoding")
+    tw, th = struct.unpack_from("<HH", raw_temperature, 84)
+    if tw != width or th != height or len(raw_temperature) != 96 + tw * th * 2:
+        fail("PATEMP01 payload dimensions")
+    print(f"valid PATEMP01: {tw}x{th}, {temperature_asset.stat().st_size} bytes")
 
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         raise SystemExit("usage: validate_live.py <directory>")
     main(sys.argv[1])
+
