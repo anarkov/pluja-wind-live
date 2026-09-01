@@ -18,10 +18,34 @@ class CompleteField:
     t_url: str
 
 
+@dataclass(frozen=True)
+class PublicationDecision:
+    decision: str
+    reason: str
+
+
+def is_usable(valid: datetime, now: datetime) -> bool:
+    return -MAX_PAST_SECONDS <= (valid - now).total_seconds() <= MAX_FUTURE_SECONDS
+
+
+def decide_publication(current: CompleteField | None, candidate: CompleteField | None, now: datetime) -> PublicationDecision:
+    """Resolve publication against the remote manifest immediately before push."""
+    current_fresh = current is not None and is_usable(current.valid, now)
+    if candidate is None:
+        return PublicationDecision("NO_VALID_CANDIDATE", "current_fresh" if current_fresh else "current_stale")
+    if current is None or not current_fresh:
+        return PublicationDecision("PUBLISH", "candidate_fresh_current_missing_or_stale")
+    if candidate.valid < current.valid:
+        return PublicationDecision("REJECT_DOWNGRADE", "candidate_validTime_older_than_remote")
+    if candidate.valid == current.valid:
+        return PublicationDecision("KEEP_CURRENT", "same_validTime_as_remote")
+    return PublicationDecision("PUBLISH", "candidate_validTime_newer_than_remote")
+
+
 def select_nearest_usable(candidates: list[CompleteField], now: datetime) -> CompleteField:
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
-    usable = [candidate for candidate in candidates if -MAX_PAST_SECONDS <= (candidate.valid - now).total_seconds() <= MAX_FUTURE_SECONDS]
+    usable = [candidate for candidate in candidates if is_usable(candidate.valid, now)]
     if not usable:
         raise RuntimeError("No complete ICON-EU U_10M/V_10M/T_2M field is within -2h/+90m of NOW UTC")
     # Closest valid time wins; for an exact tie use the future field so the
