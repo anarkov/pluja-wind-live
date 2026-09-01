@@ -31,7 +31,8 @@ def is_usable(valid: datetime, now: datetime) -> bool:
 def decide_publication(current: CompleteField | None, candidate: CompleteField | None, now: datetime) -> PublicationDecision:
     """Resolve publication against the remote manifest immediately before push."""
     current_fresh = current is not None and is_usable(current.valid, now)
-    if candidate is None:
+    candidate_fresh = candidate is not None and is_usable(candidate.valid, now)
+    if not candidate_fresh:
         return PublicationDecision("NO_VALID_CANDIDATE", "current_fresh" if current_fresh else "current_stale")
     if current is None or not current_fresh:
         return PublicationDecision("PUBLISH", "candidate_fresh_current_missing_or_stale")

@@ -12,3 +12,4 @@ class LiveSelectionTest(unittest.TestCase):
         self.assertEqual("PUBLISH", decide_publication(fresh, newer, now).decision)
         self.assertEqual("NO_VALID_CANDIDATE", decide_publication(fresh, None, now).decision)
         self.assertEqual("NO_VALID_CANDIDATE", decide_publication(stale, None, now).decision)
+        self.assertEqual("NO_VALID_CANDIDATE", decide_publication(fresh, self.field(now + timedelta(hours=2)), now).decision)
