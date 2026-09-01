@@ -3,13 +3,18 @@ name: Publish D2R ICON-EU LIVE
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 */3 * * *"
+    # Scheduled workflows can be delayed; hourly at an off-peak minute is needed
+    # to keep a 90-minute LIVE freshness budget realistic.
+    - cron: "17 * * * *"
 
 permissions:
   contents: write
 
 jobs:
   publish:
+    concurrency:
+      group: d2r-live-publish
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -25,30 +30,48 @@ jobs:
         run: python build_live_iberia.py
       - name: Validate candidate before publishing
         run: python validate_live.py "${{ runner.temp }}/d2r-live"
-      - name: Publish only a new run or valid field
+      - name: Candidate diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate="${{ runner.temp }}/d2r-live/manifest.json"
+          now=$(date -u +%FT%TZ)
+          run=$(jq -r .run "$candidate")
+          hour=$(jq -r '.regions.iberia.fields[0].forecastHour' "$candidate")
+          valid=$(jq -r '.regions.iberia.fields[0].validTime' "$candidate")
+          temp_valid=$(jq -r '.regions.iberia.temperatureFields[0].validTime' "$candidate")
+          echo "NOW_UTC=$now run=$run forecastHour=$hour validTime=$valid temperatureValidTime=$temp_valid candidateComplete=yes decision=PUBLISH_OR_KEEP_OLD"
+      - name: Publish atomically when artifacts changed
         shell: bash
         run: |
           set -euo pipefail
           candidate="${{ runner.temp }}/d2r-live/manifest.json"
           if [[ -f live/manifest.json && -f live/iberia.pawind.gz && -f live/iberia.patemp.gz ]] && \
              [[ "$(jq -r .run "$candidate")" == "$(jq -r .run live/manifest.json)" ]] && \
+             [[ "$(jq -r '.regions.iberia.fields[0].forecastHour' "$candidate")" == "$(jq -r '.regions.iberia.fields[0].forecastHour' live/manifest.json)" ]] && \
              [[ "$(jq -r '.regions.iberia.fields[0].validTime' "$candidate")" == "$(jq -r '.regions.iberia.fields[0].validTime' live/manifest.json)" ]] && \
-             [[ -n "$(jq -r '.regions.iberia.temperatureFields[0].validTime // empty' "$candidate")" ]] && \
-             [[ "$(jq -r '.regions.iberia.temperatureFields[0].validTime' "$candidate")" == "$(jq -r '.regions.iberia.temperatureFields[0].validTime // empty' live/manifest.json)" ]]; then
-            echo "Current live field is already published."
+             [[ "$(jq -r '.regions.iberia.temperatureFields[0].forecastHour' "$candidate")" == "$(jq -r '.regions.iberia.temperatureFields[0].forecastHour' live/manifest.json)" ]] && \
+             [[ "$(jq -r '.regions.iberia.temperatureFields[0].validTime' "$candidate")" == "$(jq -r '.regions.iberia.temperatureFields[0].validTime' live/manifest.json)" ]]; then
+            echo "decision=KEEP_OLD reason=same_complete_run_and_valid_time"
             exit 0
           fi
+          stage="${{ runner.temp }}/public-live"
+          mkdir -p "$stage"
+          cp "$candidate" "$stage/manifest.json"
+          cp "${{ runner.temp }}/d2r-live/iberia.pawind.gz" "$stage/iberia.pawind.gz"
+          cp "${{ runner.temp }}/d2r-live/iberia.patemp.gz" "$stage/iberia.patemp.gz"
+          python validate_live.py "$stage"
           mkdir -p live
-          cp "${{ runner.temp }}/d2r-live/manifest.json" live/manifest.json
-          cp "${{ runner.temp }}/d2r-live/iberia.pawind.gz" live/iberia.pawind.gz
-          cp "${{ runner.temp }}/d2r-live/iberia.patemp.gz" live/iberia.patemp.gz
+          cp "$stage/manifest.json" live/manifest.json
+          cp "$stage/iberia.pawind.gz" live/iberia.pawind.gz
+          cp "$stage/iberia.patemp.gz" live/iberia.patemp.gz
           git add live/manifest.json live/iberia.pawind.gz live/iberia.patemp.gz
           if git diff --cached --quiet; then
-            echo "No artifact changes."
+            echo "decision=KEEP_OLD reason=candidate_is_byte_identical"
             exit 0
           fi
+          echo "decision=PUBLISH reason=complete_wind_temperature_pair_changed"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Update D2R ICON-EU LIVE"
           git push
-
