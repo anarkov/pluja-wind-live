@@ -1,3 +1,5 @@
+
+
 """Validate PAWIND01 V1 output before it can replace a public live field."""
 from __future__ import annotations
 
@@ -66,4 +68,3 @@ if __name__ == "__main__":
     if len(sys.argv) != 2:
         raise SystemExit("usage: validate_live.py <directory>")
     main(sys.argv[1])
-
