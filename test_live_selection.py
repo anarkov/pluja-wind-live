@@ -20,3 +20,4 @@ class LiveSelectionTest(unittest.TestCase):
         newer = CompleteField("2026090209", 3, now + timedelta(minutes=30), "u", "v", "t")
         from live_selection import select_nearest_usable
         self.assertEqual(newer, select_nearest_usable([older, newer], now))
+        self.assertEqual("PUBLISH", decide_publication(older, newer, now).decision)

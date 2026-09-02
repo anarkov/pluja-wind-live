@@ -39,6 +39,8 @@ def decide_publication(current: CompleteField | None, candidate: CompleteField |
     if candidate.valid < current.valid:
         return PublicationDecision("REJECT_DOWNGRADE", "candidate_validTime_older_than_remote")
     if candidate.valid == current.valid:
+        if int(candidate.run) > int(current.run):
+            return PublicationDecision("PUBLISH", "same_validTime_newer_model_run")
         return PublicationDecision("KEEP_CURRENT", "same_validTime_as_remote")
     return PublicationDecision("PUBLISH", "candidate_validTime_newer_than_remote")
 
