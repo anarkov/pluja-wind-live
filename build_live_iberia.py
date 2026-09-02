@@ -50,6 +50,7 @@ def discover_pair(now: dt.datetime) -> CompleteField:
     candidates: list[CompleteField] = []
     expression = re.compile(r"icon-eu_europe_regular-lat-lon_single-level_(\d{8})(\d{2})_(\d{3})_U_10M\.grib2\.bz2")
     listing_failures: list[str] = []
+    availability: list[dict[str, int | str]] = []
     for hour in RUN_HOURS:
         hour_text = f"{hour:02d}"
         try:
@@ -58,7 +59,9 @@ def discover_pair(now: dt.datetime) -> CompleteField:
             t_names = names_for(hour_text, "t_2m")
         except Exception as error:
             listing_failures.append(f"{hour_text}Z:{type(error).__name__}")
+            availability.append({"directoryHour": hour_text, "u10": 0, "v10": 0, "t2m": 0, "completeTriplets": 0})
             continue
+        complete_for_directory = 0
         for u_name in u_names:
             match = expression.fullmatch(u_name)
             if not match:
@@ -66,18 +69,21 @@ def discover_pair(now: dt.datetime) -> CompleteField:
             v_name, t_name = u_name.replace("_U_10M.", "_V_10M."), u_name.replace("_U_10M.", "_T_2M.")
             if v_name not in v_names or t_name not in t_names:
                 continue
+            complete_for_directory += 1
             run = f"{match.group(1)}{match.group(2)}"
             forecast_hour = int(match.group(3))
             run_at = dt.datetime.strptime(run, "%Y%m%d%H").replace(tzinfo=dt.timezone.utc)
             candidates.append(CompleteField(run, forecast_hour, run_at + dt.timedelta(hours=forecast_hour),
                 f"{BASE}/{hour_text}/u_10m/{u_name}", f"{BASE}/{hour_text}/v_10m/{v_name}", f"{BASE}/{hour_text}/t_2m/{t_name}"))
+        availability.append({"directoryHour": hour_text, "u10": len(u_names), "v10": len(v_names), "t2m": len(t_names), "completeTriplets": complete_for_directory})
     try:
         selected = select_nearest_usable(candidates, now)
     except RuntimeError as error:
         raise RuntimeError(f"{error}; completeCandidates={len(candidates)}; listingFailures={','.join(listing_failures) or 'none'}") from error
-    print(json.dumps({"nowUtc": now.isoformat(), "completeCandidates": len(candidates), "candidateComplete": True,
-                      "run": selected.run, "forecastHour": selected.forecast_hour, "validTime": selected.valid.isoformat(),
-                      "deltaSeconds": int((selected.valid - now).total_seconds()), "decision": "PUBLISH_CANDIDATE"}, sort_keys=True))
+    nearby = sorted((candidate for candidate in candidates if -MAX_PAST_SECONDS <= (candidate.valid - now).total_seconds() <= MAX_FUTURE_SECONDS), key=lambda candidate: (candidate.valid, candidate.run, candidate.forecast_hour))
+    print(json.dumps({"nowUtc": now.isoformat(), "directoryAvailability": availability, "completeCandidates": len(candidates),
+                      "nearbyCompleteCandidates": [{"run": candidate.run, "forecastHour": candidate.forecast_hour, "validTime": candidate.valid.isoformat(), "deltaSeconds": int((candidate.valid - now).total_seconds()), "completeTriplet": True} for candidate in nearby],
+                      "selected": {"run": selected.run, "forecastHour": selected.forecast_hour, "validTime": selected.valid.isoformat(), "deltaSeconds": int((selected.valid - now).total_seconds()), "completeTriplet": True}, "decision": "PUBLISH_CANDIDATE"}, sort_keys=True))
     return selected
 
 

@@ -33,7 +33,7 @@ def decide_publication(current: CompleteField | None, candidate: CompleteField |
     current_fresh = current is not None and is_usable(current.valid, now)
     candidate_fresh = candidate is not None and is_usable(candidate.valid, now)
     if not candidate_fresh:
-        return PublicationDecision("NO_VALID_CANDIDATE", "current_fresh" if current_fresh else "current_stale")
+        return PublicationDecision("KEEP_CURRENT", "candidate_missing_or_unusable_current_fresh") if current_fresh else PublicationDecision("NO_VALID_CANDIDATE", "candidate_missing_or_unusable_current_stale")
     if current is None or not current_fresh:
         return PublicationDecision("PUBLISH", "candidate_fresh_current_missing_or_stale")
     if candidate.valid < current.valid:
@@ -51,4 +51,4 @@ def select_nearest_usable(candidates: list[CompleteField], now: datetime) -> Com
         raise RuntimeError("No complete ICON-EU U_10M/V_10M/T_2M field is within -2h/+90m of NOW UTC")
     # Closest valid time wins; for an exact tie use the future field so the
     # publication remains useful for longer after the workflow completes.
-    return min(usable, key=lambda candidate: (abs((candidate.valid - now).total_seconds()), candidate.valid < now, -candidate.valid.timestamp()))
+    return min(usable, key=lambda candidate: (abs((candidate.valid - now).total_seconds()), candidate.valid < now, -candidate.valid.timestamp(), -int(candidate.run)))

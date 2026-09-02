@@ -3,9 +3,9 @@ name: Publish D2R ICON-EU LIVE
 on:
   workflow_dispatch:
   schedule:
-    # Scheduled workflows can be delayed; hourly at an off-peak minute is needed
-    # to keep a 90-minute LIVE freshness budget realistic.
-    - cron: "17 * * * *"
+    # GitHub can delay or occasionally drop an individual scheduled delivery.
+    # Staggered quarter-hour attempts keep the 90-minute Android window covered.
+    - cron: "3,18,33,48 * * * *"
 
 permissions:
   contents: write
@@ -32,6 +32,10 @@ jobs:
         env:
           D2R_OUTPUT_DIR: ${{ runner.temp }}/d2r-live
         run: python build_live_iberia.py
+      - name: Report generator outcome
+        run: |
+          echo "GENERATOR_OUTCOME=${{ steps.generate.outcome }}"
+          test -f "${{ runner.temp }}/d2r-live/manifest.json" && cat "${{ runner.temp }}/d2r-live/manifest.json" || true
       - name: Read remote state immediately before decision
         run: |
           git fetch origin main
