@@ -3,9 +3,10 @@ name: Publish D2R ICON-EU LIVE
 on:
   workflow_dispatch:
   schedule:
-    # GitHub can delay or occasionally drop an individual scheduled delivery.
-    # Staggered quarter-hour attempts keep the 90-minute Android window covered.
-    - cron: "3,18,33,48 * * * *"
+    # The quarter-hour schedule was observably dropped for 2–5 hour stretches.
+    # Five-minute attempts provide independent delivery opportunities while the
+    # unique concurrency group still permits only one producer at a time.
+    - cron: "*/5 * * * *"
 
 permissions:
   contents: write

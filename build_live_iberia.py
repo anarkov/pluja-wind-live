@@ -80,9 +80,12 @@ def discover_pair(now: dt.datetime) -> CompleteField:
         selected = select_nearest_usable(candidates, now)
     except RuntimeError as error:
         raise RuntimeError(f"{error}; completeCandidates={len(candidates)}; listingFailures={','.join(listing_failures) or 'none'}") from error
-    nearby = sorted((candidate for candidate in candidates if -MAX_PAST_SECONDS <= (candidate.valid - now).total_seconds() <= MAX_FUTURE_SECONDS), key=lambda candidate: (candidate.valid, candidate.run, candidate.forecast_hour))
+    nearby = sorted(
+        (candidate for candidate in candidates if -MAX_PAST_SECONDS <= (candidate.valid - now).total_seconds() <= MAX_FUTURE_SECONDS),
+        key=lambda candidate: (abs((candidate.valid - now).total_seconds()), candidate.valid < now, -candidate.valid.timestamp(), -int(candidate.run)),
+    )
     print(json.dumps({"nowUtc": now.isoformat(), "directoryAvailability": availability, "completeCandidates": len(candidates),
-                      "nearbyCompleteCandidates": [{"run": candidate.run, "forecastHour": candidate.forecast_hour, "validTime": candidate.valid.isoformat(), "deltaSeconds": int((candidate.valid - now).total_seconds()), "completeTriplet": True} for candidate in nearby],
+                      "topCompleteCandidatesByDistance": [{"run": candidate.run, "forecastHour": candidate.forecast_hour, "validTime": candidate.valid.isoformat(), "deltaSeconds": int((candidate.valid - now).total_seconds()), "completeTriplet": True} for candidate in nearby[:8]],
                       "selected": {"run": selected.run, "forecastHour": selected.forecast_hour, "validTime": selected.valid.isoformat(), "deltaSeconds": int((selected.valid - now).total_seconds()), "completeTriplet": True}, "decision": "PUBLISH_CANDIDATE"}, sort_keys=True))
     return selected
 
