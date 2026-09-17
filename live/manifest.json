@@ -1,8 +1,8 @@
 {
   "version": 1,
   "model": "ICON-EU",
-  "run": "2026091700",
-  "generatedAt": "2026-09-17T05:19:08.980976+00:00",
+  "run": "2026091706",
+  "generatedAt": "2026-09-17T10:04:17.551636+00:00",
   "regions": {
     "iberia": {
       "bbox": {
@@ -13,20 +13,20 @@
       },
       "fields": [
         {
-          "forecastHour": 5,
-          "validTime": "2026-09-17T05:00:00+00:00",
+          "forecastHour": 4,
+          "validTime": "2026-09-17T10:00:00+00:00",
           "url": "iberia.pawind.gz",
-          "etag": "2026091700-f005-v1",
-          "size": 124821
+          "etag": "2026091706-f004-v1",
+          "size": 125624
         }
       ],
       "temperatureFields": [
         {
-          "forecastHour": 5,
-          "validTime": "2026-09-17T05:00:00+00:00",
+          "forecastHour": 4,
+          "validTime": "2026-09-17T10:00:00+00:00",
           "url": "iberia.patemp.gz",
-          "etag": "2026091700-f005-t1",
-          "size": 58578
+          "etag": "2026091706-f004-t1",
+          "size": 56891
         }
       ]
     }
