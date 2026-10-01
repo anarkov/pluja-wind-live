@@ -1,6 +1,7 @@
 import unittest
 from datetime import datetime, timedelta, timezone
 from live_selection import CompleteField, decide_publication, select_nearest_usable
+from dwd_v1 import parse_v1_forecast_hour, parse_v1_run, v1_complete_candidates
 
 class LiveSelectionTest(unittest.TestCase):
     def field(self, valid): return CompleteField("2026090200", 3, valid, "u", "v", "t")
@@ -47,3 +48,23 @@ class LiveSelectionTest(unittest.TestCase):
         current = self.field(now + timedelta(minutes=50))
         older = self.field(now - timedelta(minutes=5))
         self.assertEqual("REJECT_DOWNGRADE", decide_publication(current, older, now).decision)
+
+    def test_v1_structure_pairs_same_run_and_forecast_hour(self):
+        available = {
+            "U_10M": {"2026-10-01T12:00": {3, 4, 5}},
+            "V_10M": {"2026-10-01T12:00": {4, 5}},
+            "T_2M": {"2026-10-01T12:00": {5, 6}},
+        }
+        candidates = v1_complete_candidates(available, "https://example.test/icon-eu")
+        self.assertEqual(1, len(candidates))
+        self.assertEqual(5, candidates[0].forecast_hour)
+        self.assertTrue(all("/p/" in url and "/s/PT005H00M.grib2" in url for url in (candidates[0].u_url, candidates[0].v_url, candidates[0].t_url)))
+
+    def test_v1_missing_one_component_has_no_candidate(self):
+        available = {"U_10M": {"2026-10-01T12:00": {5}}, "V_10M": {"2026-10-01T12:00": {5}}, "T_2M": {}}
+        self.assertEqual([], v1_complete_candidates(available, "https://example.test/icon-eu"))
+
+    def test_v1_directory_names_are_parsed(self):
+        self.assertEqual("2026-10-01T12:00", parse_v1_run("2026-10-01T12%3A00/"))
+        self.assertEqual(5, parse_v1_forecast_hour("PT005H00M.grib2"))
+        self.assertIsNone(parse_v1_forecast_hour("PT005H00M.grib2.bz2"))
